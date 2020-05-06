@@ -157,7 +157,7 @@ def _genNetworkBacking( network ):
 def host_list( paramaters ):
   # returns a list of hosts in a resource
   # host must have paramater[ 'min_memory' ] aviable in MB
-  # orderd by paramater[ 'cpu_scaler' ] * % cpu remaning + paramater[ 'memory_scaler' ] * % mem remaning
+  # orderd by paramater[ 'cpu_scaler' ] * %cpu remaning + paramater[ 'memory_scaler' ] * %mem remaning
   connection_paramaters = paramaters[ 'connection' ]
   logging.info( 'vcenter: getting Host List for dc: "{0}"  rp: "{1}"'.format( paramaters[ 'datacenter' ], paramaters[ 'cluster' ] ) )
   si = _connect( connection_paramaters )
@@ -170,7 +170,7 @@ def host_list( paramaters ):
       if host.summary.quickStats.overallMemoryUsage is None:  # sometimes the quickstats don't get updated, for now skip that host
         continue
 
-      total_memory = host.summary.hardware.memorySize / 1024.0 / 1024.0
+      total_memory = host.summary.hardware.memorySize / 1024.0 / 1024.0  # we want MiB
       memory_aviable = total_memory - host.summary.quickStats.overallMemoryUsage
       if memory_aviable < paramaters[ 'min_memory' ]:
         logging.debug( 'vcenter: host "{0}", low aviable ram: "{1}"'.format( host.name, memory_aviable ) )
@@ -312,7 +312,7 @@ def _createDisk( si, dc, disk, datastore, file_path ):
   spec = vim.VirtualDiskManager.FileBackedVirtualDiskSpec()
   spec.diskType = disk.get( 'type', 'thin' )  # 'thin', 'eagerZeroedThick', 'preallocate'
   spec.adapterType = disk.get( 'adapter', 'busLogic' )  # 'busLogic', 'ide', 'lsiLogic'
-  spec.capacityKb = disk.get( 'size', 10 ) * 1024 * 1024
+  spec.capacityKb = disk.get( 'size', 10 ) * 1024 * 1024  # convert to kb we got GiB
 
   logging.debug( 'vcenter: creating disk "{0}"'.format( file_path ) )
 
@@ -552,7 +552,7 @@ def _create_from_scratch( si, vm_name, data_center, resource_pool, folder, host,
 
   configSpec = vim.vm.ConfigSpec()
   configSpec.name = vm_name
-  configSpec.memoryMB = vm_paramaters[ 'memory_size' ]
+  configSpec.memoryMB = vm_paramaters[ 'memory_size' ]  # in MiB
   configSpec.numCPUs = vm_paramaters[ 'cpu_count' ]
   configSpec.guestId = vm_paramaters[ 'guest_id' ]
 
@@ -583,7 +583,7 @@ def _create_from_scratch( si, vm_name, data_center, resource_pool, folder, host,
     devSpec.device = vim.vm.device.VirtualDisk()
     devSpec.device.key = 2000 + i
     devSpec.device.controllerKey = 1000
-    devSpec.device.capacityInKB = disk[ 'size' ] * 1024 * 1024
+    devSpec.device.capacityInKB = disk[ 'size' ] * 1024 * 1024  # want KB were passed in GiB
     devSpec.device.unitNumber = i + 1
     devSpec.device.backing = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
     devSpec.device.backing.fileName = disk_filepath_list[ i ]

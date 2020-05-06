@@ -40,7 +40,7 @@ def create( paramaters ):
   settings_file = vbox.compose_machine_filename( vm_name, CREATE_GROUP, CREATE_FLAGS, vbox.system_properties[ 'default_machine_folder' ] )
   vm = vbox.create_machine( settings_file, vm_name, CREATE_GROUPS, vm_paramaters[ 'guest_type' ], CREATE_FLAGS )
   vm.RTC_use_UTC = True
-  vm.memory_size = vm_paramaters[ 'memory_size' ]  # in Meg
+  vm.memory_size = vm_paramaters[ 'memory_size' ]  # in MiB
 
   disk_controller_name = 'SCSI'
   vm.add_storage_controller( disk_controller_name, constants.StorageBus.SCSI )
@@ -81,7 +81,7 @@ def create( paramaters ):
           disk_port += 1
 
       else:
-        disk_size = disk.get( 'size', 10 ) * 1024 * 1024 * 1024  # disk_size is in bytes, we were pass in G
+        disk_size = disk.get( 'size', 10 ) * 1024 * 1024 * 1024  # disk_size is in bytes, we were passed in GiB
         disk_format = 'vdi'
         location = '{0}/{1}.vdi'.format( os.path.dirname( vm.settings_file_path ), disk_name )
         medium = vbox.create_medium( disk_format, location, constants.AccessMode.ReadWrite, constants.DeviceType.HardDisk )
