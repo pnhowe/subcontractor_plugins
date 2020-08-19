@@ -184,7 +184,7 @@ def host_list( paramaters ):
     logging.debug( 'vcenter: host_map {0}'.format( host_map ) )
 
     result = list( host_map.keys() )
-    result.sort( key=lambda a: host_map[ a ] )
+    result.sort( key=lambda a: host_map[ a ], reverse=True )
 
     return { 'host_list': result }
 

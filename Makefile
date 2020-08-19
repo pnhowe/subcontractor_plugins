@@ -4,7 +4,7 @@ all:
 	./setup.py build
 
 install:
-	./setup.py install --root $(DESTDIR) --install-purelib=/usr/lib/python3/dist-packages/ --prefix=/usr --no-compile -O0
+	./setup.py install --root=$(DESTDIR) --install-purelib=/usr/lib/python3/dist-packages/ --prefix=/usr --no-compile -O0
 
 version:
 	echo $(VERSION)

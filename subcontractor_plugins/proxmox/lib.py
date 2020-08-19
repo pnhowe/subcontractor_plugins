@@ -1,5 +1,6 @@
 import logging
 import time
+import re
 
 from proxmoxer import ProxmoxAPI
 
@@ -9,6 +10,8 @@ from subcontractor.credentials import getCredentials
 
 POLL_INTERVAL = 4
 BOOT_ORDER_MAP = { 'hdd': 'c', 'net': 'n', 'cd': 'd' }
+
+vlaned_network = re.compile( '^[a-zA-Z0-9][a-zA-Z0-9_\-]*\.[0-9]{1,4}$' )
 
 
 def _connect( connection_paramaters ):
@@ -57,6 +60,21 @@ def create( paramaters ):
   logging.info( 'proxmox: creating vm "{0}"'.format( vm_name ) )
   proxmox = _connect( connection_paramaters )
 
+  node = proxmox.nodes( vm_paramaters[ 'node' ] )
+  network_list = []
+  for network in node.network.get():
+    if 'bridge' in network[ 'type' ].lower():
+      network_list.append( network[ 'iface' ] )
+
+  # TODO: need network boot order, or just the provisioning interface
+  for interface in vm_paramaters[ 'interface_list' ]:
+    network_name = interface[ 'network' ]
+    if vlaned_network.match( network_name ):
+      network_name, _ = network_name.split( '.' )
+
+    if network_name not in network_list:
+      raise ValueError( 'Network "{0}" not aviable on node "{1}"'.format( network_name, vm_paramaters[ 'node' ] ) )
+
   spec = {
             'vmid': vm_vmid,
             'name': vm_name,
@@ -75,18 +93,26 @@ def create( paramaters ):
 
   for index in range( 0, len( interface_list ) ):
     interface = interface_list[ index ]
-    spec[ 'net{0}'.format( index ) ] = '{0},bridge={1},firewall=0'.format( interface.get( 'type', 'virtio' ), interface[ 'network' ] )
+    network_name = interface[ 'network' ]
+    vlan = ''
+    if vlaned_network.match( network_name ):
+      network_name, vlan = network_name.split( '.' )
+      vlan = ',vlan={0}'.format( vlan )
+
+    spec[ 'net{0}'.format( index ) ] = '{0},bridge={1},firewall=0{2}'.format( interface.get( 'type', 'virtio' ), network_name, vlan )
 
   disk_list = vm_paramaters[ 'disk_list' ]
   disk_list.sort( key=lambda a: a[ 'name' ] )
   for index in range( 0, len( disk_list ) ):
     disk = disk_list[ index ]
-    location = 'local-lvm'
-    if disk[ 'type' ] == 'thin':
-      location = 'local-lvmthin'
-    spec[ 'scsi{0}'.format( index ) ] = '{0}:vm-{1}-{2},size={3}G'.format( location, vm_vmid, disk[ 'name' ], disk.get( 'size', 10 ) )
+    location = 'local'
+    # location = 'local-lvm'
+    # if disk[ 'type' ] == 'thin':
+    #   location = 'local-lvmthin'
+    # spec[ 'scsi{0}'.format( index ) ] = '{0}:vm-{1}-{2},size={3}G'.format( location, vm_vmid, disk[ 'name' ], disk.get( 'size', 10 ) )  # if we pre-created the file, make sure delete removes disks if they are manually created
+    # file name for generating our selves: Block: vm-<vm id>-<disk name>  Ffilesystem: <vmid>/vm-<vm id>-<disk name>
+    spec[ 'scsi{0}'.format( index ) ] = '{0}:{1}'.format( location, disk.get( 'size', 10 ) )  # in GiB
 
-  node = proxmox.nodes( vm_paramaters[ 'node' ] )
   # have yet to find the log file for the "{data:null}" results, I have found that using `qm create` on the command line helps expose the error, https://pve.proxmox.com/pve-docs/qm.1.html
   taskid = node.qemu.create( **spec )
 
@@ -213,7 +239,7 @@ def power_state( paramaters ):
 def node_list( paramaters ):
   # returns a list of hosts in a resource
   # host must have paramater[ 'min_memory' ] aviable in MB
-  # orderd by paramater[ 'cpu_scaler' ] * %cpu remaning + paramater[ 'memory_scaler' ] * %mem remaning
+  # orderd by paramater[ 'cpu_scaler' ] * %cpu remaning + paramater[ 'memory_scaler' ] * %mem remaning + paramater[ 'io_scaler' ] * ( 1 - %IO Delay )
   connection_paramaters = paramaters[ 'connection' ]
   logging.info( 'proxmox: getting Node List' )
   proxmox = _connect( connection_paramaters )
@@ -224,22 +250,27 @@ def node_list( paramaters ):
       logging.debug( 'proxmox: node "{0}", not online, status: "{1}"'.format( node[ 'node' ], node[ 'status' ] ) )
       continue
 
-    total_memory = node[ 'maxmem' ] / 1024.0 / 1024.0
-    memory_aviable = total_memory - node[ 'mem' ] / 1024.0 / 1024.0
+    status = proxmox.nodes( node[ 'node' ] ).status.get()
+
+    total_memory = status[ 'memory' ][ 'total' ] / 1024.0 / 1024.0
+    memory_aviable = status[ 'memory' ][ 'free' ] / 1024.0 / 1024.0
     if memory_aviable < paramaters[ 'min_memory' ]:
       logging.debug( 'proxmox: host "{0}", low aviable ram: "{1}"'.format( node[ 'node' ], memory_aviable ) )
       continue
 
-    cpu_utilization_aviable = 1 - min( 1.0, node[ 'cpu' ] )
-    if cpu_utilization_aviable * node[ 'maxcpu' ] < paramaters[ 'min_cores' ]:
-      logging.debug( 'proxmox: host "{0}", low aviable cores: "{1}"'.format( node[ 'node' ], memory_aviable ) )
+    cpu_utilization_aviable = 1 - min( 1.0, status[ 'cpu' ] )
+    cpu_aviable = cpu_utilization_aviable * status[ 'cpu' ][ 'cpus' ]
+    if cpu_aviable < paramaters[ 'min_cores' ]:
+      logging.debug( 'proxmox: host "{0}", low aviable cores: "{1}"'.format( node[ 'node' ], cpu_aviable ) )
       continue
 
-    node_map[ node[ 'node' ] ] = ( paramaters[ 'memory_scaler' ] * ( memory_aviable / total_memory ) ) + ( paramaters[ 'cpu_scaler' ] * cpu_utilization_aviable )
+    node_map[ node[ 'node' ] ] = paramaters[ 'memory_scaler' ] * ( memory_aviable / total_memory )
+    node_map[ node[ 'node' ] ] += paramaters[ 'cpu_scaler' ] * cpu_utilization_aviable
+    node_map[ node[ 'node' ] ] += paramaters[ 'io_scaler' ] * ( 1 - min( 1.0, status[ 'wait' ] ) )
 
   logging.debug( 'proxmox: node_map {0}'.format( node_map ) )
 
   result = list( node_map.keys() )
-  result.sort( key=lambda a: node_map[ a ] )
+  result.sort( key=lambda a: node_map[ a ], reverse=True )
 
   return { 'node_list': result }
