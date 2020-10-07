@@ -66,6 +66,7 @@ def create( paramaters ):
     if 'bridge' in network[ 'type' ].lower():
       network_list.append( network[ 'iface' ] )
 
+  # TODO: let harddrive creation be raw or qcow2
   # TODO: need network boot order, or just the provisioning interface
   for interface in vm_paramaters[ 'interface_list' ]:
     network_name = interface[ 'network' ]
@@ -97,7 +98,7 @@ def create( paramaters ):
     vlan = ''
     if vlaned_network.match( network_name ):
       network_name, vlan = network_name.split( '.' )
-      vlan = ',vlan={0}'.format( vlan )
+      vlan = ',tag={0}'.format( vlan )
 
     spec[ 'net{0}'.format( index ) ] = '{0},bridge={1},firewall=0{2}'.format( interface.get( 'type', 'virtio' ), network_name, vlan )
 
@@ -157,11 +158,15 @@ def get_interface_map( paramaters ):
     raise Exception( 'VM Not Found' )
 
   config_map = vm.config.get()
+  interface_map = {}
   for name, value in config_map.items():
     if name.startswith( 'net' ):
       lines = value.split( ',' )
       ( _, mac ) = lines[0].split( '=' )  # 'net0': 'virtio=A6:EF:6D:0F:F3:7F,bridge=vmbr0,firewall=1',
-      interface_list.append( mac )
+      interface_map[ name ] = mac
+
+  for name in sorted( interface_map.keys() ):
+    interface_list.append( interface_map[ name ] )
 
   return { 'interface_list': interface_list }
 
@@ -210,7 +215,9 @@ def set_power( paramaters ):
   else:
     raise Exception( 'proxmox desired state "{0}"'.format( desired_state ) )
 
-  if _taskWait( node, taskid ) != 'OK':
+  rc = _taskWait( node, taskid )
+  if rc not in ( 'OK', 'VM quit/powerdown failed - got timeout' ):
+    logging.debug( 'proxmox: unexpected power control return "{0}"'.format( rc ) )
     raise Exception( 'Power task failed' )
 
   status = vm.status.current.get()
