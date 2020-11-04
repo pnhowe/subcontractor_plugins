@@ -20,8 +20,8 @@ dist-clean: clean
 
 .PHONY:: all install version clean dist-clean
 
-test-distros:
-	echo ubuntu-xenial
+test-blueprints:
+	echo ubuntu-bionic-base
 
 test-requires:
 	echo flake8 python3-pytest python3-pytest-cov python3-pytest-django python3-pytest-mock
@@ -32,10 +32,10 @@ lint:
 test:
 	py.test-3 -x --cov=subcontractor_plugins --cov-report html --cov-report term -vv subcontractor_plugins
 
-.PHONY:: test-distros test-requres test
+.PHONY:: test-blueprints test-requres test
 
-dpkg-distros:
-	echo ubuntu-xenial
+dpkg-blueprints:
+	echo ubuntu-bionic-base
 
 dpkg-requires:
 	echo dpkg-dev debhelper python3-dev python3-setuptools
@@ -45,6 +45,6 @@ dpkg:
 	touch dpkg
 
 dpkg-file:
-	echo $(shell ls ../subcontractor-plugins_*.deb):xenial
+	echo $(shell ls ../subcontractor-plugins_*.deb):bionic
 
 .PHONY:: dpkg-requires dpkg dpkg-file
