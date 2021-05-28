@@ -723,7 +723,7 @@ def create_rollback( paramaters ):
           raise Exception( 'Unknown Task Error when Deleting "{0}": "{1}"'.format( item, task.info.error ) )
 
       if task.info.state != 'success':
-        raise Exception( 'Unexpected Task State when Deleting "{0}": "{1}"'.format( task.info.state ) )
+        raise Exception( 'Unexpected Task State when Deleting "{0}": "{1}"'.format( item, task.info.state ) )
 
     # remove all the folders if empty
 
@@ -833,8 +833,9 @@ def set_power( paramaters ):
         logging.debug( 'vcenter: vm "{0}"({1}) power "{2}" at {3}%'.format( vm_name, vm_uuid, desired_state, task.info.progress ) )
         time.sleep( POLL_INTERVAL )
 
-      if task.info.state == vim.TaskInfo.State.error:
-        raise Exception( 'vcenter: Unable to set power state of "{0}"({1}) to "{2}"'.format( vm_name, vm_uuid, desired_state ) )
+      # invalid power status happens when we try to turn off a vm that is allready off
+      if task.info.state == vim.TaskInfo.State.error and task.info.error.__class__.__name__ != 'vim.fault.InvalidPowerState':
+        raise Exception( 'vcenter: Unable to set power state of "{0}"({1}) to "{2}": "{3}"'.format( vm_name, vm_uuid, desired_state, task.info.error ) )
 
     else:
       time.sleep( POLL_INTERVAL * 2 )  # give the vm the chance to do something

@@ -27,7 +27,7 @@ test-requires:
 	echo flake8 python3-pytest python3-pytest-cov python3-pytest-django python3-pytest-mock
 
 lint:
-	flake8 --ignore=E501,E201,E202,E111,E126,E114,E402,W605 --statistics --exclude subcontractor_plugins/iputils/pyping .
+	flake8 --ignore=E501,E201,E202,E111,E126,E114,E402 --statistics --exclude subcontractor_plugins/iputils/pyping .
 
 test:
 	py.test-3 -x --cov=subcontractor_plugins --cov-report html --cov-report term -vv subcontractor_plugins

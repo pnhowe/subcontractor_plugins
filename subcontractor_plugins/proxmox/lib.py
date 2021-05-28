@@ -11,7 +11,7 @@ from subcontractor.credentials import getCredentials
 POLL_INTERVAL = 4
 BOOT_ORDER_MAP = { 'hdd': 'c', 'net': 'n', 'cd': 'd' }
 
-vlaned_network = re.compile( '^[a-zA-Z0-9][a-zA-Z0-9_\-]*\.[0-9]{1,4}$' )
+vlaned_network = re.compile( r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*\.[0-9]{1,4}$' )
 
 
 def _connect( connection_paramaters ):
@@ -245,8 +245,9 @@ def power_state( paramaters ):
 
 def node_list( paramaters ):
   # returns a list of hosts in a resource
-  # host must have paramater[ 'min_memory' ] aviable in MB
-  # orderd by paramater[ 'cpu_scaler' ] * %cpu remaning + paramater[ 'memory_scaler' ] * %mem remaning + paramater[ 'io_scaler' ] * ( 1 - %IO Delay )
+  # host must have paramater[ 'min_memory' ] aviable in MB and at least paramaters[ 'min_cores' ] cpu cores, then
+  # each metric is converted to a value 0 -> 1, where 1 is most desired, the * the scaler then summed up, then we
+  #  sort by the score and return the list
   connection_paramaters = paramaters[ 'connection' ]
   logging.info( 'proxmox: getting Node List' )
   proxmox = _connect( connection_paramaters )
@@ -259,21 +260,24 @@ def node_list( paramaters ):
 
     status = proxmox.nodes( node[ 'node' ] ).status.get()
 
+    vm_count = len( proxmox.nodes( node[ 'node' ] ).qemu.get() )
+
     total_memory = status[ 'memory' ][ 'total' ] / 1024.0 / 1024.0
     memory_aviable = status[ 'memory' ][ 'free' ] / 1024.0 / 1024.0
     if memory_aviable < paramaters[ 'min_memory' ]:
       logging.debug( 'proxmox: host "{0}", low aviable ram: "{1}"'.format( node[ 'node' ], memory_aviable ) )
       continue
 
-    cpu_utilization_aviable = 1 - min( 1.0, status[ 'cpu' ] )
-    cpu_aviable = cpu_utilization_aviable * status[ 'cpu' ][ 'cpus' ]
+    cpu_utilization_aviable = 1.0 - min( 1.0, status[ 'cpu' ] )
+    cpu_aviable = cpu_utilization_aviable * status[ 'cpuinfo' ][ 'cpus' ]
     if cpu_aviable < paramaters[ 'min_cores' ]:
       logging.debug( 'proxmox: host "{0}", low aviable cores: "{1}"'.format( node[ 'node' ], cpu_aviable ) )
       continue
 
-    node_map[ node[ 'node' ] ] = paramaters[ 'memory_scaler' ] * ( memory_aviable / total_memory )
-    node_map[ node[ 'node' ] ] += paramaters[ 'cpu_scaler' ] * cpu_utilization_aviable
-    node_map[ node[ 'node' ] ] += paramaters[ 'io_scaler' ] * ( 1 - min( 1.0, status[ 'wait' ] ) )
+    node_map[ node[ 'node' ] ] = paramaters[ 'scalers' ][ 'memory' ] * ( memory_aviable / total_memory )
+    node_map[ node[ 'node' ] ] += paramaters[ 'scalers' ][ 'cpu' ] * cpu_utilization_aviable
+    node_map[ node[ 'node' ] ] += paramaters[ 'scalers' ][ 'io' ] * ( 1.0 - min( 1.0, status[ 'wait' ] ) )
+    node_map[ node[ 'node' ] ] += paramaters[ 'scalers' ][ 'vm' ] * ( 1.0 / vm_count )
 
   logging.debug( 'proxmox: node_map {0}'.format( node_map ) )
 
