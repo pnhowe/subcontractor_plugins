@@ -744,7 +744,7 @@ def destroy( paramaters ):
     try:
       vm = _getVM( si, vm_uuid )
     except MOBNotFound:
-      return { 'done': True }  # it's gone, we are donne
+      return { 'done': True }  # it's gone, we are done
 
     task = vm.Destroy()
 
@@ -824,6 +824,8 @@ def set_power( paramaters ):
         vm.ShutdownGuest()  # no Task
       except vim.fault.ToolsUnavailable:
         task = vm.PowerOff()
+      except vim.fault.InvalidPowerState:
+        pass  # will try again, if it happens again, the count will get it
 
     # if it won't power off
     # vm.terminateVM()  # no Task
@@ -834,7 +836,7 @@ def set_power( paramaters ):
         time.sleep( POLL_INTERVAL )
 
       # invalid power status happens when we try to turn off a vm that is allready off
-      if task.info.state == vim.TaskInfo.State.error and task.info.error.__class__.__name__ != 'vim.fault.InvalidPowerState':
+      if task.info.state == vim.TaskInfo.State.error and task.info.error.__class__.__name__ != 'vim.fault.InvalidPowerState':   # will try again, if it happens again, the count will get it
         raise Exception( 'vcenter: Unable to set power state of "{0}"({1}) to "{2}": "{3}"'.format( vm_name, vm_uuid, desired_state, task.info.error ) )
 
     else:

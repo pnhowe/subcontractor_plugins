@@ -152,7 +152,8 @@ def change_boot_to_pxe_request(uri):
 
 
 def change_boot_order_request(uri, boot_device):
-    assert boot_device in BOOT_DEVICES
+    if boot_device not in BOOT_DEVICES:
+        raise Exception('"{0}" not in BOOT_DEVICES'.format(boot_device))
     stub = """<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:n1="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_BootConfigSetting">
 <s:Header>
