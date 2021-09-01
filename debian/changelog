@@ -1,3 +1,10 @@
+subcontractor-plugins (0.10.0-1) UNRELEASED; urgency=medium
+
+  * Added packet/Equinix Metal
+  * fixes
+
+ -- Peter Howe <pnhowe@gmail.com>  Wed, 01 Sep 2021 07:00:19 -0600
+
 subcontractor-plugins (0.9.0-1) bionic; urgency=medium
 
   * Added Proxmox
