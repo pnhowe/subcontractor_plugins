@@ -1,4 +1,4 @@
-subcontractor-plugins (0.10.0-1) UNRELEASED; urgency=medium
+subcontractor-plugins (0.10.0-1) focal; urgency=medium
 
   * Added packet/Equinix Metal
   * fixes

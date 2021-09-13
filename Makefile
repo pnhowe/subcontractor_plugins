@@ -23,7 +23,7 @@ dist-clean: clean
 .PHONY:: all install version clean dist-clean
 
 test-blueprints:
-	echo ubuntu-bionic-base
+	echo ubuntu-focal-base
 
 test-requires:
 	echo flake8 python3-pytest python3-pytest-cov python3-pytest-django python3-pytest-mock
@@ -37,16 +37,16 @@ test:
 .PHONY:: test-blueprints test-requres test
 
 dpkg-blueprints:
-	echo ubuntu-bionic-base
+	echo ubuntu-focal-base
 
 dpkg-requires:
-	echo dpkg-dev debhelper python3-dev python3-setuptools
+	echo dpkg-dev debhelper python3-dev python3-setuptools dh-python
 
 dpkg:
 	dpkg-buildpackage -b -us -uc
 	touch dpkg
 
 dpkg-file:
-	echo $(shell ls ../subcontractor-plugins_*.deb):bionic
+	echo $(shell ls ../subcontractor-plugins_*.deb):focal
 
 .PHONY:: dpkg-requires dpkg dpkg-file
