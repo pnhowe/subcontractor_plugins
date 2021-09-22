@@ -11,6 +11,9 @@ from subcontractor.credentials import getCredentials
 POLL_DELAY = 10
 TASK_WAIT_COUNT = 30
 
+# https://api.equinix.com/metal/v1/api-docs/
+# https://app.swaggerhub.com/apis/displague/metal-api/1.0.0
+
 
 def _connect( connection_paramaters ):
   # work arround invalid SSL
@@ -38,22 +41,17 @@ def _get_virtual_network_map( manager, project_id ):
   return result
 
 
-def _ip_config( address ):
+def _ip_config( address, prefix ):
   if address is None:
-    return '''        dhcp4: no
-'''
+    return '{0}dhcp4: no'.format( prefix )
 
   if address[ 'address' ] == 'dhcp':
-    return '''        dhcp4: yes
-'''
+    return '{0}dhcp4: yes'.format( prefix )
 
-  result = '''        dhcp4: no
-        addresses: [ {0}/{1} ]
-'''.format( address[ 'address' ], address[ 'prefix' ] )
+  result = '{0}dhcp4: no\n{0}addresses: [ {1}/{2} ]'.format( prefix, address[ 'address' ], address[ 'prefix' ] )
 
   if address[ 'gateway' ]:
-    result += '''        gateway4: {0}
-'''.format( address[ 'gateway' ] )
+    result += '\n{0}gateway4: {1}'.format( prefix, address[ 'gateway' ] )
 
   return result
 
@@ -73,61 +71,88 @@ def create( paramaters ):
 
   part_list = []  # we are using the same general logic as cloud-init, if these old mime finctions get removed, go see what cloud-init is doing
 
+  setup_script = '''#!/usr/bin/bash
+set -x
+
+sed -i -E -e '/^datasource_list:.*/s/.*/datasource_list: [NoCloud]/' /etc/cloud/cloud.cfg
+rm /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+rm /etc/network/interfaces
+apt purge -y ifupdown
+'''
+
+  part = MIMEText( setup_script, 'x-shellscript', 'ascii' )  # ascii so it won't think the utf-8 needs to base64 encoded
+  part_list.append( part )
+
   cloud_config = '''#cloud-config
 
-system_info:
-  network:
-    version: 2
-    ethernets:'''
+datasource_list: [NoCloud]
+
+write_files:
+- path: /etc/cloud/cloud.cfg.d/50-network.cfg
+  permissions: '0660'
+  content: |
+    network:
+      version: 2
+      ethernets:
+'''
 
   for iface_name, address_list in address_map.items():
+    if port_map[ iface_name_physical_map[ iface_name ] ].get( 'interface_list', False ):  # is a bond interface
+      continue
+
     address = None
     if iface_name in bonded_interfaces:
       address = None
-    elif address_list and address_list[0].get( 'vlan', None ) is not None:
+    elif address_list and address_list[0].get( 'vlan', 0 ) == 0:
       address = address_list[0]
     elif port_map[ iface_name_physical_map[ iface_name ] ][ 'network' ] == 'public':
       address = { 'address': 'dhcp' }
 
-    cloud_config += '''
-      {0}:
+    cloud_config += '''        {0}:
 {1}
-'''.format( iface_name, _ip_config( address ) )
+'''.format( iface_name, _ip_config( address, '          ' ) )
 
-  cloud_config += '''
-    bonds:'''
+  cloud_config += '''      bonds:
+'''
   for iface_name, iface in port_map.items():
     address = None
-    if address_list and address_list[0].get( 'vlan', None ) is not None:
+    address_list = address_map[ iface[ 'name' ] ]
+    if address_list and address_list[0].get( 'vlan', 0 ) == 0:
       address = address_list[0]
-    elif port_map[ iface_name_physical_map[ iface_name ] ][ 'network' ] == 'public':
+    elif port_map[ iface_name ][ 'network' ] == 'public':
       address = { 'address': 'dhcp' }
 
     if 'interface_list' in iface:
-      cloud_config += '''
-      {0}:
-        interfaces: [ {1} ]
+      cloud_config += '''        {0}:
+          interfaces: [ {1} ]
 {2}
-        parameters:
-          mode: 802.3ad
-          down-delay: 200
-          up-delay: 200
-          lacp-rate: fast
-          transmit-hash-policy: layer3+4
-          mii-monitor-interval: 100
-'''.format( iface_name, ', '.join( iface[ 'interface_list' ] ), _ip_config( address ) )
+          parameters:
+            mode: 802.3ad
+            down-delay: 200
+            up-delay: 200
+            lacp-rate: fast
+            transmit-hash-policy: layer3+4
+            mii-monitor-interval: 100
+'''.format( iface_name, ', '.join( iface[ 'interface_list' ] ), _ip_config( address, '          ' ) )
 
-  cloud_config += '''
-    vlans:'''
+  cloud_config += '''      vlans:
+'''
   for iface_name, address_list in address_map.items():
     for address in address_list:
-      if address[ 'vlan' ]:
-        cloud_config += '''
-        {0}_{1}:
+      if address.get( 'vlan', False ):
+        cloud_config += '''        {0}.{1}:
           link: {0}
           id: {1}
 {2}
-'''.format( iface_name, address[ 'vlan' ], _ip_config( address ) )
+'''.format( iface_name, address[ 'vlan' ], _ip_config( address, '          ' ) )
+
+  cloud_config += '''
+runcmd:
+- |
+    sed s#"dhcp4: yes"#"$(curl -s http://metadata.packet.net/metadata | jq -r '.network.addresses[0] | "dhcp4: no\\\\n      addresses: [ " + .address + "/31 ]\\\\n      gateway4: " + .gateway')"# -i /etc/cloud/cloud.cfg.d/50-network.cfg
+- ln -s /etc/cloud/cloud.cfg.d/50-network.cfg /etc/netplan/50-network.yaml
+- netplan apply
+'''
 
   part = MIMEText( cloud_config, 'cloud-config', 'ascii' )  # ascii so it won't think the utf-8 needs to base64 encoded
   part.add_header( 'Content-Disposition', 'attachment; filename="network-config"' )
@@ -149,7 +174,14 @@ system_info:
 
     data[ 'userdata' ] = user_data.as_string()
 
-  device = manager.create_device( **data )
+  try:
+    device = manager.create_device( **data )
+  except packet.baseapi.ResponseError as e:
+    if e.response.status_code == 503:  # NOTE: the 5XX response codes are not very well documented
+      raise Exception( 'No aviable on demand devices with specified plan in specified facility' )
+    else:
+      raise Exception( 'Error Creating device: "{0}"'.format( e ) )
+
   device_uuid = device.id
 
   logging.info( 'packet: device "{0}" created, uuid: "{1}"'.format( device_description, device_uuid ) )
@@ -208,7 +240,7 @@ system_info:
         if ready:
           break
 
-        logging.debug( 'packet: waiting for vlan assignments "{0}"({1}) to start finish, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
+        logging.debug( 'packet: waiting for vlan assignments "{0}"({1}) to finish, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
 
       else:
         Exception( 'Timeout waiting for vlan assignments "{0}" to finish'.format( device_description ) )
