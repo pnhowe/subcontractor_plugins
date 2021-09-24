@@ -11,6 +11,7 @@ from subcontractor.credentials import getCredentials
 POLL_DELAY = 10
 TASK_WAIT_COUNT = 30
 
+# https://metal.equinix.com/developers/api/
 # https://api.equinix.com/metal/v1/api-docs/
 # https://app.swaggerhub.com/apis/displague/metal-api/1.0.0
 
@@ -211,6 +212,7 @@ runcmd:
 
   port_network_map = dict( [ ( i[ 'name' ], { "id": i[ 'id' ], 'native': i[ 'native_virtual_network' ], 'tagged': i[ 'virtual_networks' ] } ) for i in device.network_ports ] )
 
+  # TODO: catch any e.response.status_code == 422 in this block?
   for iface_name, port in port_map.items():
     if iface_name_physical_map[ port[ 'name' ] ] in bonded_interfaces:  # for now we are just going to ignore these
       continue
@@ -218,32 +220,34 @@ runcmd:
     if iface_name not in port_network_map:  # TODO: do we throw something for this?
       continue
 
-    if network_id_name_map[ port_network_map[ iface_name ][ 'native' ] ] != port[ 'network' ]:
-      manager.assign_native_vlan( port_network_map[ iface_name ][ 'id' ], name_network_id_map[ port[ 'network' ] ] )
+    if port[ 'network' ] != 'public':  # if the native network is not public, we are in layer2 mode
+      manager.convert_layer_2( port_network_map[ iface_name ][ 'id' ], name_network_id_map[ port[ 'network' ] ] )
+      # manager.assign_native_vlan( port_network_map[ iface_name ][ 'id' ], name_network_id_map[ port[ 'network' ] ] )
 
-    curent_tagged_vlans = set( [ virtual_network_map[ i ][ 'vlan' ] for i in port_network_map[ iface_name ][ 'tagged' ] ] )
-    target_tagged_vlans = set( port[ 'tagged_vlans' ] )
-    vlan_assignments = []
-    for vlan in curent_tagged_vlans - target_tagged_vlans:
-      vlan_assignments.append( { 'vlan': vlan_network_id_map[ vlan ], 'state': 'unassigned' } )
+    else:  # in layer 2 mode we can only have one vlan if we don't want that vlan tagged
+      curent_tagged_vlans = set( [ virtual_network_map[ i ][ 'vlan' ] for i in port_network_map[ iface_name ][ 'tagged' ] ] )
+      target_tagged_vlans = set( port[ 'tagged_vlans' ] )
+      vlan_assignments = []
+      for vlan in curent_tagged_vlans - target_tagged_vlans:
+        vlan_assignments.append( { 'vlan': vlan_network_id_map[ vlan ], 'state': 'unassigned' } )
 
-    for vlan in target_tagged_vlans - curent_tagged_vlans:
-      vlan_assignments.append( { 'vlan': vlan_network_id_map[ vlan ], 'native': False, 'state': 'assigned' } )
+      for vlan in target_tagged_vlans - curent_tagged_vlans:
+        vlan_assignments.append( { 'vlan': vlan_network_id_map[ vlan ], 'native': False, 'state': 'assigned' } )
 
-    if vlan_assignments:
-      manager.call_api( '/ports/{0}/vlan-assignments/batches'.format( port_network_map[ iface_name ][ 'id' ] ), type='POST', params={ 'vlan_assignments': vlan_assignments } )
-      for i in range( 0, TASK_WAIT_COUNT ):
-        time.sleep( POLL_DELAY )
-        ready = True
-        for assignment in manager.call_api( '/ports/{0}/vlan-assignments/batches'.format( port_network_map[ iface_name ][ 'id' ] ), type='GET' )[ 'batches' ]:
-          ready = ready & ( assignment[ 'state' ] == 'completed' )
-        if ready:
-          break
+      if vlan_assignments:
+        manager.call_api( '/ports/{0}/vlan-assignments/batches'.format( port_network_map[ iface_name ][ 'id' ] ), type='POST', params={ 'vlan_assignments': vlan_assignments } )
+        for i in range( 0, TASK_WAIT_COUNT ):
+          time.sleep( POLL_DELAY )
+          ready = True
+          for assignment in manager.call_api( '/ports/{0}/vlan-assignments/batches'.format( port_network_map[ iface_name ][ 'id' ] ), type='GET' )[ 'batches' ]:
+            ready = ready & ( assignment[ 'state' ] == 'completed' )
+          if ready:
+            break
 
-        logging.debug( 'packet: waiting for vlan assignments "{0}"({1}) to finish, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
+          logging.debug( 'packet: waiting for vlan assignments "{0}"({1}) to finish, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
 
-      else:
-        Exception( 'Timeout waiting for vlan assignments "{0}" to finish'.format( device_description ) )
+        else:
+          Exception( 'Timeout waiting for vlan assignments "{0}" to finish'.format( device_description ) )
 
   return { 'done': True, 'uuid': device.id }
 
