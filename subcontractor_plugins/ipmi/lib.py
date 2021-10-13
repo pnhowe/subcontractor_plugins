@@ -64,13 +64,13 @@ class IPMIClient():
 
       if not ignorable_errors( lines[0] ):
         logging.error( 'IPMI: Unknown or Non-Ignorable error "{0}", rc: "{1}"'.format( lines, proc.returncode ) )
-        return 'error'
+        raise Exception( 'Unknown or Non-Ignorable error "{0}", rc: "{1}"'.format( lines, proc.returncode ) )
 
       logging.warning( 'IPMI: got ignorable error "{0}", rc: "{1}"'.format( lines, proc.returncode ) )
       time.sleep( IPMI_CMD_RETRY_DELAY )
 
     logging.warning( 'IPMI: Max retries, bailing' )
-    return 'error'
+    raise Exception( 'Max retries' )
 
   def getPower( self, retry_count ):
     result = self._doCmd( 'status', retry_count )
@@ -78,7 +78,7 @@ class IPMIClient():
     return result.split()[ -1 ]
 
   def setPower( self, state, retry_count ):
-    if state not in ( 'on', 'off', 'shutdown', 'cycle', 'reset' ):
+    if state not in ( 'on', 'off', 'soft', 'cycle', 'reset' ):
       raise ValueError( 'Unknown power state "{0}"'.format( state ) )
 
     self._doCmd( state, retry_count )
@@ -115,15 +115,15 @@ def set_power( paramaters ):
 
   curent_state = client.getPower( IPMI_CMD_MAX_RETRY )
 
-  if curent_state == desired_state or ( curent_state == 'off' and desired_state == 'soft_off' ):
+  if curent_state == desired_state or ( curent_state == 'off' and desired_state == 'shutdown' ):
     return { 'state': curent_state }
 
-  if desired_state == 'soft_off':
-    desired_state = 'shutdown'
+  if desired_state == 'shutdown':
+    desired_state = 'soft'
 
-  client.setPower( desired_state, IPMI_CMD_MAX_RETRY )  # TODO: do we want to do something if there is an error here?  the next call to getPower should pick up anything
+  client.setPower( desired_state, IPMI_CMD_MAX_RETRY )
 
-  time.sleep( 1 )
+  time.sleep( 5 )
 
   curent_state = client.getPower( IPMI_CMD_MAX_RETRY )
   logging.info( 'IPMI: setting power state of "{0}" to "{1}" complete'.format( connection_paramaters[ 'ip_address' ], desired_state ) )
