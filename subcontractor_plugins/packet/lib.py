@@ -57,18 +57,8 @@ def _ip_config( address, prefix ):
   return result
 
 
-def create( paramaters ):
-  device_paramaters = paramaters[ 'device' ]
-  connection_paramaters = paramaters[ 'connection' ]
-  device_description = device_paramaters[ 'description' ]
-
-  logging.info( 'packet: creating device "{0}"'.format( device_description ) )
-  manager = _connect( connection_paramaters )
-
-  port_map = device_paramaters[ 'port_map' ]
+def _create_via_image( device_paramaters, port_map, iface_name_physical_map, bonded_interfaces ):
   address_map = device_paramaters[ 'address_map' ]
-  iface_name_physical_map = dict( [ ( j[ 'name' ], i ) for i, j in port_map.items() ] )
-  bonded_interfaces = [ j for i in port_map.values() if i.get( 'interface_list', False ) for j in i[ 'interface_list' ] ]
 
   part_list = []  # we are using the same general logic as cloud-init, if these old mime finctions get removed, go see what cloud-init is doing
 
@@ -159,7 +149,7 @@ runcmd:
   part.add_header( 'Content-Disposition', 'attachment; filename="network-config"' )
   part_list.append( part )
 
-  data = {
+  result = {
            'project_id': device_paramaters[ 'project' ],
            'hostname': device_paramaters[ 'hostname' ],
            'plan': device_paramaters[ 'plan' ],
@@ -173,7 +163,83 @@ runcmd:
     for part in part_list:
       user_data.attach( part )
 
-    data[ 'userdata' ] = user_data.as_string()
+    result[ 'userdata' ] = user_data.as_string()
+
+  return result
+
+
+def _create_via_dhcp( device_paramaters ):
+  result = {
+           'project_id': device_paramaters[ 'project' ],
+           'hostname': device_paramaters[ 'hostname' ],
+           'plan': device_paramaters[ 'plan' ],
+           'facility': device_paramaters[ 'facility' ],
+           'always_pxe': True,
+           'operating_system': 'custom_ipxe',
+           # 'description': device_paramaters[ 'description' ]
+         }
+
+  # this is a copy of the pxe script from the resources, with a tweek to wait for contractor to be ping able, this is
+  # so we can wait fot the network to get set up
+  result[ 'userdata' ] = '''#!ipxe
+:top
+
+prompt --key s --timeout 5000 Press 's' for shell && goto do_shell ||
+
+:getip
+echo mac.........${net0/mac}
+dhcp net0 -c dhcp || goto retry
+
+ping --count 1 contractor || goto retry
+
+echo hostname:...${net0/hostname}
+echo ip address:.${net0/ip}
+echo gateway ip:.${net0/gateway}
+echo netmask:....${net0/netmask}
+echo dns server:.${net0/dns}
+echo domain:.....${net0/domain}
+echo dhcp server:${net0/dhcp-server}
+echo syslog svr.:${net0/syslog}
+echo Routing Table:
+route
+
+echo Getting Boot Script
+chain http://contractor/config/boot_script/ || goto retry
+
+:do_shell
+echo Dropping to iPXE shell, docs at http://ipxe.org/cmd
+echo You probably want to "dhcp" first
+echo Type "exit" to continue with the boot process.
+shell
+goto top
+
+:retry
+sleep 5
+goto getip
+'''
+
+  return result
+
+
+def create( paramaters ):
+  device_paramaters = paramaters[ 'device' ]
+  connection_paramaters = paramaters[ 'connection' ]
+  device_description = device_paramaters[ 'description' ]
+
+  logging.info( 'packet: creating device "{0}"'.format( device_description ) )
+  manager = _connect( connection_paramaters )
+
+  port_map = device_paramaters[ 'port_map' ]
+  iface_name_physical_map = dict( [ ( j[ 'name' ], i ) for i, j in port_map.items() ] )
+  bonded_interfaces = [ j for i in port_map.values() if i.get( 'interface_list', False ) for j in i[ 'interface_list' ] ]
+
+  # initial stab at guessing if we are DHCPing or letting packet do it's thing, if there is only one port and it is not public
+  as_dhcp = len( port_map.values() ) == 1 and port_map.values()[0][ 'network' ] != 'public'
+
+  if as_dhcp:
+    data = _create_via_dhcp( device_paramaters )
+  else:
+    data = _create_via_image( device_paramaters, port_map, iface_name_physical_map, bonded_interfaces )
 
   try:
     device = manager.create_device( **data )
@@ -190,14 +256,15 @@ runcmd:
   for i in range( 0, TASK_WAIT_COUNT ):
     time.sleep( POLL_DELAY )
     device = manager.get_device( device_uuid )
-    if device.state != 'queued':
+    if device.state == 'active':
       break
 
-    logging.debug( 'packet: waiting for device "{0}"({1}) to start provisioning, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
+    logging.debug( 'packet: waiting for device "{0}"({1}) to finish provisioning, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
 
   else:
-    Exception( 'Timeout waiting for device "{0}" to start provisioning'.format( device_description ) )
+    Exception( 'Timeout waiting for device "{0}" to finish provisioning'.format( device_description ) )
 
+  # we wait for provisioning to finish before messing with the network, the API allows it, but it can break the provisioner
   virtual_network_map = _get_virtual_network_map( manager, device_paramaters[ 'project' ] )
   vlan_network_id_map = dict( [ ( v[ 'vlan' ], k ) for k, v in virtual_network_map.items() ] )
   name_network_id_map = dict( [ ( v[ 'name' ], k ) for k, v in virtual_network_map.items() ] )
@@ -325,17 +392,6 @@ def power_state( paramaters ):
   manager = _connect( connection_paramaters )
   device = manager.get_device( device_uuid )
   return { 'state': _power_state_convert( device.state ) }
-
-
-def device_state( paramaters ):
-  connection_paramaters = paramaters[ 'connection' ]
-  device_uuid = paramaters[ 'uuid' ]
-  device_description = paramaters[ 'description' ]
-
-  logging.info( 'packat: getting "{0}"({1}) device state...'.format( device_description, device_uuid ) )
-  manager = _connect( connection_paramaters )
-  device = manager.get_device( device_uuid )
-  return { 'state': device.state }
 
 
 def get_interface_map( paramaters ):
