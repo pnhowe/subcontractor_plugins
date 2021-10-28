@@ -10,6 +10,7 @@ from subcontractor.credentials import getCredentials
 
 POLL_DELAY = 10
 TASK_WAIT_COUNT = 30
+CREATE_TASK_WAIT_COUNT = 120
 
 # https://metal.equinix.com/developers/api/
 # https://api.equinix.com/metal/v1/api-docs/
@@ -184,38 +185,19 @@ def _create_via_dhcp( device_paramaters ):
   result[ 'userdata' ] = '''#!ipxe
 :top
 
+echo Starting t3kton provisioning....
+
 prompt --key s --timeout 5000 Press 's' for shell && goto do_shell ||
 
 :getip
 echo mac.........${net0/mac}
-dhcp net0 -c dhcp || goto retry
+dhcp -c dhcp || goto retry
 
 ping --count 1 contractor || goto retry
 
-echo hostname:...${net0/hostname}
-echo ip address:.${net0/ip}
-echo gateway ip:.${net0/gateway}
-echo netmask:....${net0/netmask}
-echo dns server:.${net0/dns}
-echo domain:.....${net0/domain}
-echo dhcp server:${net0/dhcp-server}
-echo syslog svr.:${net0/syslog}
-echo Routing Table:
-route
+echo Network Configured, powering off to wait for the next thing....
 
-echo Getting Boot Script
-chain http://contractor/config/boot_script/ || goto retry
-
-:do_shell
-echo Dropping to iPXE shell, docs at http://ipxe.org/cmd
-echo You probably want to "dhcp" first
-echo Type "exit" to continue with the boot process.
-shell
-goto top
-
-:retry
-sleep 5
-goto getip
+poweroff
 '''
 
   return result
@@ -234,7 +216,7 @@ def create( paramaters ):
   bonded_interfaces = [ j for i in port_map.values() if i.get( 'interface_list', False ) for j in i[ 'interface_list' ] ]
 
   # initial stab at guessing if we are DHCPing or letting packet do it's thing, if there is only one port and it is not public
-  as_dhcp = len( port_map.values() ) == 1 and port_map.values()[0][ 'network' ] != 'public'
+  as_dhcp = len( port_map.values() ) == 1 and list( port_map.values() )[0][ 'network' ] != 'public'
 
   if as_dhcp:
     data = _create_via_dhcp( device_paramaters )
@@ -253,17 +235,18 @@ def create( paramaters ):
 
   logging.info( 'packet: device "{0}" created, uuid: "{1}"'.format( device_description, device_uuid ) )
 
-  for i in range( 0, TASK_WAIT_COUNT ):
+  for i in range( 0, CREATE_TASK_WAIT_COUNT ):
     time.sleep( POLL_DELAY )
     device = manager.get_device( device_uuid )
     if device.state == 'active':
       break
 
-    logging.debug( 'packet: waiting for device "{0}"({1}) to finish provisioning, {2} of {3}...'.format( device_description, device_uuid, i, TASK_WAIT_COUNT ) )
+    logging.debug( 'packet: waiting for device "{0}"({1}) to finish provisioning, curently "{2}", {3} of {4}...'.format( device_description, device_uuid, device.state, i, CREATE_TASK_WAIT_COUNT ) )
 
   else:
     Exception( 'Timeout waiting for device "{0}" to finish provisioning'.format( device_description ) )
 
+  logging.info( 'packet: Reconfiguring network for "{0}"'.format( device_description ) )
   # we wait for provisioning to finish before messing with the network, the API allows it, but it can break the provisioner
   virtual_network_map = _get_virtual_network_map( manager, device_paramaters[ 'project' ] )
   vlan_network_id_map = dict( [ ( v[ 'vlan' ], k ) for k, v in virtual_network_map.items() ] )
