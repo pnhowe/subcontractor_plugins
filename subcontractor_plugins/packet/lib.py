@@ -190,12 +190,16 @@ echo Starting t3kton provisioning....
 prompt --key s --timeout 5000 Press 's' for shell && goto do_shell ||
 
 :getip
-echo mac.........${net0/mac}
-dhcp -c dhcp || goto retry
+sleep 2
 
-ping --count 1 contractor || goto retry
+echo mac.........${net0/mac}
+dhcp -c dhcp || goto getip
+
+ping --count 1 contractor || goto getip
 
 echo Network Configured, powering off to wait for the next thing....
+
+sleep 10
 
 poweroff
 '''
@@ -216,9 +220,9 @@ def create( paramaters ):
   bonded_interfaces = [ j for i in port_map.values() if i.get( 'interface_list', False ) for j in i[ 'interface_list' ] ]
 
   # initial stab at guessing if we are DHCPing or letting packet do it's thing, if there is only one port and it is not public
-  as_dhcp = len( port_map.values() ) == 1 and list( port_map.values() )[0][ 'network' ] != 'public'
+  network_set = set( [ i[ 'network' ] for i in port_map.values() ] )
 
-  if as_dhcp:
+  if len( network_set ) == 1 and not network_set.intersection( { 'public' } ):
     data = _create_via_dhcp( device_paramaters )
   else:
     data = _create_via_image( device_paramaters, port_map, iface_name_physical_map, bonded_interfaces )
@@ -311,7 +315,7 @@ def destroy( paramaters ):
   manager = _connect( connection_paramaters )
 
   try:
-      device = manager.get_device( device_uuid )
+    device = manager.get_device( device_uuid )
   except packet.ResponseError:
     return { 'done': True }  # it's gone, we are done
 
