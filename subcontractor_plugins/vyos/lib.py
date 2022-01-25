@@ -2,7 +2,7 @@ import logging
 import ssl
 import http
 import json
-from urllib import request
+from urllib import request, parse
 
 # from subcontractor.credentials import getCredentials
 
@@ -30,14 +30,15 @@ def _get_opener( proxy=None, verify_ssl=False ):
 def _send( host, auth_key, data ):
   logging.debug( 'vyos: POSTING "{0}" to "{1}"'.format( data, host ) )
   opener = _get_opener()
-  result = opener.open( 'https://{0}/configure'.format( host ), data=json.dumps( { 'key': auth_key, 'data': data } ).encode( 'utf-8' ) )
+  req = request.Request( 'https://{0}/configure'.format( host ), data=parse.urlencode( { 'key': auth_key, 'data': json.dumps( data ) } ).encode( 'utf-8' ), method='POST' )
+  result = opener.open( req )
   result = json.loads( result.read() )
   logging.debug( 'vyos: result "{0}" from "{1}"'.format( result, host ) )
   return result
 
 
 def apply( paramaters ):
-  command_list = paramaters[ 'command_list' ]
+  command_list = json.loads( paramaters[ 'command_list' ] )
   logging.info( 'vyos: issuing "{0}" to "{1}"...'.format( command_list, paramaters[ 'host' ] ) )
   for command in command_list:
     rc = _send( paramaters[ 'host' ], paramaters[ 'auth_key' ], { 'op': command[0], 'path': command[1] } )
@@ -45,5 +46,3 @@ def apply( paramaters ):
       return { 'error': rc[ 'error' ] }
 
   return { 'error': None }
-
-# curl -k -X POST -F data='{"op": "set", "path": ["interfaces", "dummy", "dum1", "address"], "value": "203.0.113.76/32"}' -F key=MY-HTTP-API-PLAINTEXT-KEY https://192.168.122.127/configure
