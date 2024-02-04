@@ -251,6 +251,7 @@ def create( paramaters ):
     Exception( 'Timeout waiting for device "{0}" to finish provisioning'.format( device_description ) )
 
   logging.info( 'packet: Reconfiguring network for "{0}"'.format( device_description ) )
+
   # we wait for provisioning to finish before messing with the network, the API allows it, but it can break the provisioner
   virtual_network_map = _get_virtual_network_map( manager, device_paramaters[ 'project' ] )
   vlan_network_id_map = dict( [ ( v[ 'vlan' ], k ) for k, v in virtual_network_map.items() ] )
