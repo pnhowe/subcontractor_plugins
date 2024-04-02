@@ -312,7 +312,7 @@ def _createDisk( si, dc, disk, datastore, file_path ):
   spec = vim.VirtualDiskManager.FileBackedVirtualDiskSpec()
   spec.diskType = disk.get( 'type', 'thin' )  # 'thin', 'eagerZeroedThick', 'preallocate'
   spec.adapterType = disk.get( 'adapter', 'busLogic' )  # 'busLogic', 'ide', 'lsiLogic'
-  spec.capacityKb = disk.get( 'size', 10 ) * 1024 * 1024  # convert to kb we got GiB
+  spec.capacityKb = int( disk.get( 'size', 10 ) ) * 1024 * 1024  # convert to kb we got GiB
 
   logging.debug( 'vcenter: creating disk "{0}"'.format( file_path ) )
 
@@ -583,7 +583,7 @@ def _create_from_scratch( si, vm_name, data_center, resource_pool, folder, host,
     devSpec.device = vim.vm.device.VirtualDisk()
     devSpec.device.key = 2000 + i
     devSpec.device.controllerKey = 1000
-    devSpec.device.capacityInKB = disk[ 'size' ] * 1024 * 1024  # want KB were passed in GiB
+    devSpec.device.capacityInKB = int( disk[ 'size' ] ) * 1024 * 1024  # want KB were passed in GiB
     devSpec.device.unitNumber = i + 1
     devSpec.device.backing = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
     devSpec.device.backing.fileName = disk_filepath_list[ i ]

@@ -13,8 +13,21 @@ TASK_WAIT_COUNT = 30
 CREATE_TASK_WAIT_COUNT = 120
 
 # https://metal.equinix.com/developers/api/
+# https://console.equinix.com
 # https://api.equinix.com/metal/v1/api-docs/
 # https://app.swaggerhub.com/apis/displague/metal-api/1.0.0
+# url=$(curl https://metadata.packet.net/metadata | curl https://metadata.packet.net/metadata | jq -r .user_state_url)
+# tell() {
+#   data=$(
+#     jq -n '$ARGS.named | .code |= tonumber' \
+#      --arg state "$1" \
+#      --arg code "$2" \
+#      --arg message "$3"
+#   )
+#   curl -v -X POST -d "$data" "$url"
+# }
+#
+# tell succeeded 1002 "$(cat /run/current-system/about.json)"
 
 
 def _connect( connection_paramaters ):
@@ -75,6 +88,7 @@ apt purge -y ifupdown
   part = MIMEText( setup_script, 'x-shellscript', 'ascii' )  # ascii so it won't think the utf-8 needs to base64 encoded
   part_list.append( part )
 
+  # this needs to be a copy of the linux-installer netplan tempalte
   cloud_config = '''#cloud-config
 
 datasource_list: [NoCloud]
@@ -140,6 +154,7 @@ write_files:
 
   cloud_config += '''
 runcmd:
+- apt install -y jq
 - |
     sed s#"dhcp4: yes"#"$(curl -s http://metadata.packet.net/metadata | jq -r '.network.addresses[0] | "dhcp4: no\\\\n      addresses: [ " + .address + "/31 ]\\\\n      gateway4: " + .gateway')"# -i /etc/cloud/cloud.cfg.d/50-network.cfg
 - ln -s /etc/cloud/cloud.cfg.d/50-network.cfg /etc/netplan/50-network.yaml
@@ -190,7 +205,7 @@ echo Starting t3kton provisioning....
 prompt --key s --timeout 5000 Press 's' for shell && goto do_shell ||
 
 :getip
-sleep 2
+sleep 10
 
 echo mac.........${net0/mac}
 dhcp -c dhcp || goto getip
@@ -232,8 +247,11 @@ def create( paramaters ):
   except packet.baseapi.ResponseError as e:
     if e.response.status_code == 503:  # NOTE: the 5XX response codes are not very well documented
       raise Exception( 'No aviable on demand devices with specified plan in specified facility' )
-    else:
-      raise Exception( 'Error Creating device: "{0}"'.format( e ) )
+
+    if e.response.status_code == 404:
+      raise Exception( 'A Dependant Resource(ie: project/facility/etc) is missing' )
+
+    raise Exception( 'Error Creating device: "{0}"'.format( e ) )
 
   device_uuid = device.id
 
@@ -264,7 +282,7 @@ def create( paramaters ):
   # manager.assign_native_vlan( port_id, vnid )
   # manager.convert_layer_2( port_id, vlan_id )
 
-  port_network_map = dict( [ ( i[ 'name' ], { "id": i[ 'id' ], 'native': i[ 'native_virtual_network' ], 'tagged': i[ 'virtual_networks' ] } ) for i in device.network_ports ] )
+  port_network_map = dict( [ ( i[ 'name' ], { 'id': i[ 'id' ], 'native': i[ 'native_virtual_network' ], 'tagged': i[ 'virtual_networks' ] } ) for i in device.network_ports ] )
 
   # TODO: catch any e.response.status_code == 422 in this block?
   for iface_name, port in port_map.items():
@@ -316,8 +334,11 @@ def destroy( paramaters ):
 
   try:
     device = manager.get_device( device_uuid )
-  except packet.ResponseError:
-    return { 'done': True }  # it's gone, we are done
+  except packet.ResponseError as e:
+    if e.response.status_code == 404:
+      return { 'done': True }  # it's gone, we are done
+
+    raise e
 
   device.delete()
 
@@ -326,9 +347,12 @@ def destroy( paramaters ):
     logging.debug( 'packet: checking to see if "{0}" is destroyed, check {1} of {2}...'.format( device_description, i, TASK_WAIT_COUNT ) )
     try:
       manager.get_device( device_uuid )
-    except packet.ResponseError:
-      logging.info( 'packet: device "{0}" destroyed'.format( device_description ) )
-      return { 'done': True }
+    except packet.ResponseError as e:
+      if e.response.status_code == 404:
+        logging.info( 'packet: device "{0}" destroyed'.format( device_description ) )
+        return { 'done': True }
+
+      raise e
 
   raise Exception( 'Timeout waiting for device "{0}" to delete'.format( device_description ) )
 
@@ -352,7 +376,13 @@ def set_power( paramaters ):
 
   logging.info( 'packet: setting power state of "{0}"({1}) to "{2}"...'.format( device_description, device_uuid, desired_state ) )
   manager = _connect( connection_paramaters )
-  device = manager.get_device( device_uuid )
+  try:
+    device = manager.get_device( device_uuid )
+  except packet.ResponseError as e:
+    if e.response.status_code == 404:
+      raise Exception( 'Device Not found' )
+
+    raise e
 
   curent_state = _power_state_convert( device.state )
   if curent_state == desired_state or ( curent_state == 'off' and desired_state == 'soft_off' ):
@@ -365,7 +395,14 @@ def set_power( paramaters ):
 
   time.sleep( POLL_DELAY )  # give the device the chance to do something
 
-  device = manager.get_device( device_uuid )
+  try:
+    device = manager.get_device( device_uuid )
+  except packet.ResponseError as e:
+    if e.response.status_code == 404:
+      raise Exception( 'Device Not found' )
+
+    raise e
+
   logging.info( 'packet: setting power state of "{0}"({1}) to "{2}" complete'.format( device_description, device_uuid, desired_state ) )
   return { 'state': _power_state_convert( device.state ) }
 
@@ -377,7 +414,15 @@ def power_state( paramaters ):
 
   logging.info( 'packat: getting "{0}"({1}) device power state...'.format( device_description, device_uuid ) )
   manager = _connect( connection_paramaters )
-  device = manager.get_device( device_uuid )
+
+  try:
+    device = manager.get_device( device_uuid )
+  except packet.ResponseError as e:
+    if e.response.status_code == 404:
+      raise Exception( 'Device Not found' )
+
+    raise e
+
   return { 'state': _power_state_convert( device.state ) }
 
 
@@ -388,7 +433,14 @@ def get_interface_map( paramaters ):
 
   logging.info( 'packat: getting "{0}"({1}) device ip adresses...'.format( device_description, device_uuid ) )
   manager = _connect( connection_paramaters )
-  device = manager.get_device( device_uuid )
+
+  try:
+    device = manager.get_device( device_uuid )
+  except packet.ResponseError as e:
+    if e.response.status_code == 404:
+      raise Exception( 'Device Not found' )
+
+    raise e
 
   result = dict( ( i[ 'id' ], { 'name': i[ 'name' ], 'mac': i[ 'data' ].get( 'mac', None ), 'ip_addresses': [] } ) for i in device.network_ports )
 
@@ -396,3 +448,40 @@ def get_interface_map( paramaters ):
     result[ ip_address[ 'interface' ][ 'href' ].split( '/' )[2] ][ 'ip_addresses' ].append( { 'address': ip_address[ 'address' ], 'gateway': ip_address[ 'gateway' ], 'public': ip_address[ 'public' ] } )
 
   return { 'interface_map': result }
+
+
+"""
+temp address template:
+  cloud_config = '''#cloud-config
+
+datasource_list: [NoCloud]
+
+write_files:
+- path: /etc/cloud/cloud.cfg.d/50-network.cfg
+  permissions: '0660'
+  content: |
+    network:
+      version: 2
+      ethernets:
+        eno1:
+          dhcp4: no
+        eno2:
+          dhcp4: no
+      bonds:
+        bond0:
+          interfaces: [ eno1, eno2 ]
+          dhcp4: yes
+          parameters:
+            mode: 802.3ad
+            down-delay: 200
+            up-delay: 200
+            lacp-rate: fast
+            transmit-hash-policy: layer3+4
+            mii-monitor-interval: 100
+'''
+
+  cloud_config += '''      vlans:
+'''
+
+
+"""
