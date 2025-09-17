@@ -1,6 +1,14 @@
+subcontractor-plugins (0.14.0-1) noble; urgency=medium
+
+  * Added Libvirt
+  * Added Test
+  * Packaging updates
+
+ -- Peter Howe <pnhowe@gmail.com>  Wed, 17 Sep 2025 13:14:17 -0600
+
 subcontractor-plugins (0.13.2-1) focal; urgency=medium
 
-  * Packet Tweeks 
+  * Packet Tweeks
 
  -- Peter Howe <pnhowe@gmail.com>  Wed, 27 Oct 2021 11:17:56 -0600
 
