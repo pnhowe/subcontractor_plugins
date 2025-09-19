@@ -3,7 +3,7 @@ VERSION := $(shell head -n 1 debian/changelog | awk '{match( $$0, /\(.+?\)/); pr
 all:
 
 install:
-	pip3 install . --target="$(DESTDIR)/usr/lib/python3/dist-packages" --no-deps --no-compile --no-build-isolation
+	HOME=/tmp pip3 install . --target="$(DESTDIR)/usr/lib/python3/dist-packages" --no-deps --no-compile --no-build-isolation
 
 version:
 	echo $(VERSION)
@@ -12,6 +12,7 @@ clean:
 	$(RM) -r build
 	$(RM) dpkg
 	$(RM) -r htmlcov
+	$(RM) -r subcontractor_plugins.egg-info
 	dh_clean || true
 	find -name *.pyc -delete
 	find -name __pycache__ -delete

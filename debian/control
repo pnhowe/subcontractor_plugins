@@ -2,13 +2,13 @@ Source: subcontractor-plugins
 Section: utils
 Priority: optional
 Maintainer: Peter Howe <pnhowe@gmail.com>
-Build-Depends: debhelper (>= 7), python3 (>= 3.10), python3-dev (>=3.10), python3-setuptools (>= 20.0), lsb-release
+Build-Depends: debhelper, python3, python3-dev, python3-setuptools, dh-python, python3-pip, lsb-release
 Standards-Version: 3.8.3
-X-Python3-Version: >= 3.10
+X-Python3-Version: >= 3.8
 
 Package: subcontractor-plugins
 Architecture: all
-Depends: python3 (>= 3.10), subcontractor, ${misc:Depends}, ${python3:Depends}
+Depends: python3, subcontractor, ${misc:Depends}, ${python3:Depends}
 Recommends: python3-docker, python3-pyvmomi, python3-boto3, python3-paramiko, python3-azure, python3-zeep, ipmitool, python3-pysnmp4, python3-libvirt
 Description: Subcontractor Plugins
   Subcontractor Plugins
