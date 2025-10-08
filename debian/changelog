@@ -1,3 +1,10 @@
+subcontractor-plugins (0.14.1-1) noble; urgency=medium
+
+  * Libvirt fixes
+  * moved to async
+
+ -- Peter Howe <pnhowe@gmail.com>  Wed, 08 Oct 2025 06:36:54 -0600
+
 subcontractor-plugins (0.14.0-1) noble; urgency=medium
 
   * Added Libvirt

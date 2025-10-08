@@ -1,5 +1,5 @@
 import logging
-import time
+import asyncio
 from requests import exceptions
 
 from subcontractor.credentials import getCredentials
@@ -37,7 +37,7 @@ class AWTClient():
         pass
 
       logging.debug( 'AMT: Connecting Refused, try {0} of {1}'.format( counter, MAX_RETRIES ) )
-      time.sleep( 1 )
+      asyncio.sleep( 1 )
       counter += 1
 
     raise ConnectionRefusedError()
@@ -76,7 +76,7 @@ def set_power( paramaters ):
 
   client.setPower( desired_state )
 
-  time.sleep( 1 )
+  asyncio.sleep( 1 )
 
   curent_state = client.getPower()
   client.disconnect()

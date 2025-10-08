@@ -1,5 +1,5 @@
 import logging
-import time
+import asyncio
 import os
 import random
 
@@ -88,7 +88,7 @@ def create( paramaters ):
         progress = medium.create_base_storage( disk_size, [ constants.MediumVariant.Standard ] )
         while not progress.completed:
           logging.debug( 'virtualbox: creating storage for "{0}" disk "{1}" at {2}%, {3} seconds left'.format( vm_name, disk_name, progress.percent, progress.time_remaining ) )
-          time.sleep( 1 )
+          asyncio.sleep( 1 )
 
         if medium.state != constants.MediumState.Created:
           raise Exception( 'disk "{0}" for vm "{1}" faild to create: "{2}"'.format( disk_name, vm_name, progress.error_info[ 'text' ] ) )
@@ -162,7 +162,7 @@ def create_rollback( paramaters ):
     progress = vm.delete_config( media )
     while not progress.completed:
       logging.debug( 'virtualbox: deleting config "{0}" power off at {1}%, {2} seconds left'.format( vm_name, progress.percent, progress.time_remaining ) )
-      time.sleep( 1 )
+      asyncio.sleep( 1 )
 
   # make a list of files that needs to be cleaned up, just incase they are created an not attached, or vm wasn't registerd
   file_list = [ vbox.compose_machine_filename( vm_name, CREATE_GROUP, CREATE_FLAGS, vbox.system_properties[ 'default_machine_folder' ] ) ]
@@ -204,7 +204,7 @@ def destroy( paramaters ):
   progress = vm.delete_config( media )
   while not progress.completed:
     logging.debug( 'virtualbox: deleting config "{0}"({1}) at {2}%, {3} seconds left'.format( vm_name, vm_uuid, progress.percent, progress.time_remaining ) )
-    time.sleep( 1 )
+    asyncio.sleep( 1 )
 
   logging.info( 'virtualbox: vm "{0}" destroyed'.format( vm_name ) )
   return { 'done': True }
@@ -279,7 +279,7 @@ def set_power( paramaters ):
   if progress is not None:
     while not progress.completed:
       logging.debug( 'virtualbox: vm "{0}"({1}) power "{2}" at {3}%, {4} seconds left'.format( vm_name, vm_uuid, desired_state, progress.percent, progress.time_remaining ) )
-      time.sleep( 1 )
+      asyncio.sleep( 1 )
 
   logging.info( 'virtualbox: setting power state of "{0}"({1}) to "{2}" complete'.format( vm_name, vm_uuid, desired_state ) )
   return { 'state': _power_state_convert( vm.state ) }

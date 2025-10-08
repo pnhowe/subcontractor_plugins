@@ -65,32 +65,59 @@ def create( paramaters ):
   interface_list = []
   for i in range( 0, len( vm_paramaters[ 'interface_list' ] ) ):
     interface = vm_paramaters[ 'interface_list' ][ i ]
+    # for a list of supported models: qemu-system-x86_64 -net nic,model=?
     interface_list.append( f'''
       <interface type='bridge'>
         <!-- name: { interface[ 'name' ] } -->
         <source bridge='{ interface[ 'network' ] }' />
         <mac address='{ interface[ 'mac' ] }' />
+        <model type='e1000' />  <!-- or virtio -->
       </interface>''')
 
   boot_list = []
   for dev in vm_paramaters[ 'boot_order' ]:
     boot_list.append( f'    <boot dev=\'{ dev }\'/>' )
 
-  vmxml = f'''<domain type='{ vm_paramaters[ 'domain_type' ] }'>
+  vmxml = f'''<domain type='kvm'>
   <name>{ vm_name }</name>
   <title>{ vm_name }</title>
   <memory unit='Mib'>{ vm_paramaters[ 'memory_size' ] }</memory>
   <vcpu>{ vm_paramaters[ 'cpu_count' ] }</vcpu>
-  <clock offset='utc' />
+  <cpu mode="host-passthrough" check="none" migratable="on"/>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
   <os>
-    <type>hvm</type>
+    <type arch='x86_64' machine='pc-i440fx-noble'>hvm</type><!-- pc-q35-8.2 -->
 { '\n'.join( boot_list ) }
     <bootmenu enable='yes' timeout='1000'/>
     <smbios mode='emulate'/>
     <bios useserial='yes' rebootTimeout='0'/>
   </os>
+  <features>
+    <acpi/>
+  </features>
   <devices>
   <console type='pty'/>
+  <!-- remove graphics and video to disable the video console -->
+  <graphics type='spice' port='5900' autoport='yes' listen='127.0.0.1'>
+    <listen type='address' address='127.0.0.1'/>
+    <image compression='off'/>
+  </graphics>
+  <video>
+    <model type='qxl' ram='65536' vram='65536' vgamem='16384' heads='1' primary='yes'/>
+    <alias name='video0'/>
+  </video>
+  <rng model='virtio'>
+    <backend model='random'>/dev/urandom</backend>
+    <alias name='rng0'/>
+  </rng>
 { '\n'.join( disk_list ) }
 { '\n'.join( interface_list ) }
   </devices>
