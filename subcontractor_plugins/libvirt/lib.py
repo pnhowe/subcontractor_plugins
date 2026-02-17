@@ -11,6 +11,8 @@ import libvirt
 
 DISK_IMAGE_DIR = '/var/lib/libvirt/t3kton'
 
+ENABLE_VNC_CONSOLE = False
+
 
 def _connect( connection_paramaters ):
   host = connection_paramaters[ 'host' ]
@@ -63,8 +65,7 @@ def create( paramaters ):
     </disk>''' )
 
   interface_list = []
-  for i in range( 0, len( vm_paramaters[ 'interface_list' ] ) ):
-    interface = vm_paramaters[ 'interface_list' ][ i ]
+  for interface in vm_paramaters[ 'interface_list' ]:
     # for a list of supported models: qemu-system-x86_64 -net nic,model=?
     interface_list.append( f'''
       <interface type='bridge'>
@@ -77,6 +78,19 @@ def create( paramaters ):
   boot_list = []
   for dev in vm_paramaters[ 'boot_order' ]:
     boot_list.append( f'    <boot dev=\'{ dev }\'/>' )
+
+  console = '''<console type='pty'/>
+'''
+  if ENABLE_VNC_CONSOLE:
+    console += '''    <graphics type='spice' port='5900' autoport='yes' listen='127.0.0.1'>
+      <listen type='address' address='127.0.0.1'/>
+      <image compression='off'/>
+    </graphics>
+    <video>
+      <model type='qxl' ram='65536' vram='65536' vgamem='16384' heads='1' primary='yes'/>
+      <alias name='video0'/>
+    </video>
+'''
 
   vmxml = f'''<domain type='kvm'>
   <name>{ vm_name }</name>
@@ -104,22 +118,13 @@ def create( paramaters ):
     <acpi/>
   </features>
   <devices>
-  <console type='pty'/>
-  <!-- remove graphics and video to disable the video console -->
-  <graphics type='spice' port='5900' autoport='yes' listen='127.0.0.1'>
-    <listen type='address' address='127.0.0.1'/>
-    <image compression='off'/>
-  </graphics>
-  <video>
-    <model type='qxl' ram='65536' vram='65536' vgamem='16384' heads='1' primary='yes'/>
-    <alias name='video0'/>
-  </video>
-  <rng model='virtio'>
-    <backend model='random'>/dev/urandom</backend>
-    <alias name='rng0'/>
-  </rng>
+    { console }
 { '\n'.join( disk_list ) }
 { '\n'.join( interface_list ) }
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+      <alias name='rng0'/>
+    </rng>
   </devices>
 </domain>
 '''
@@ -201,7 +206,6 @@ def get_interface_map( paramaters ):
   root = ElementTree.fromstring( domain.XMLDesc( libvirt.VIR_DOMAIN_XML_SECURE ) )
 
   for interface in root.findall( './devices/interface' ):
-    print( interface )
     interface_list.append( interface.find( 'mac' ).attrib[ 'address' ] )
 
   return { 'interface_list': interface_list }

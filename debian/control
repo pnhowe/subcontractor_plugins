@@ -9,6 +9,6 @@ X-Python3-Version: >= 3.8
 Package: subcontractor-plugins
 Architecture: all
 Depends: python3, subcontractor, ${misc:Depends}, ${python3:Depends}
-Recommends: python3-docker, python3-pyvmomi, python3-boto3, python3-paramiko, python3-azure, python3-zeep, ipmitool, python3-pysnmp4, python3-libvirt
+Recommends: python3-docker, python3-pyvmomi, python3-boto3, python3-paramiko, python3-azure, python3-zeep, ipmitool, python3-pysnmp4, python3-libvirt, python3-proxmoxer
 Description: Subcontractor Plugins
   Subcontractor Plugins
