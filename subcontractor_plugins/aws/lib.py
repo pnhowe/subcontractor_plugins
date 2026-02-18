@@ -1,6 +1,6 @@
 import logging
 import boto3
-import time
+import asyncio
 from botocore.exceptions import WaiterError
 
 from subcontractor.credentials import getCredentials
@@ -129,7 +129,7 @@ def set_power( paramaters ):
 
   counter = 0
   while True:
-    time.sleep( POLL_INTERVAL )
+    asyncio.sleep( POLL_INTERVAL )
     instance = ec2.Instance( instance_id )
     if instance.state[ 'Name' ] == 'running':
       break

@@ -157,7 +157,7 @@ def _genNetworkBacking( network ):
 def host_list( paramaters ):
   # returns a list of hosts in a resource
   # host must have paramater[ 'min_memory' ] aviable in MB
-  # orderd by paramater[ 'cpu_scaler' ] * % cpu remaning + paramater[ 'memory_scaler' ] * % mem remaning
+  # orderd by paramater[ 'cpu_scaler' ] * %cpu remaning + paramater[ 'memory_scaler' ] * %mem remaning
   connection_paramaters = paramaters[ 'connection' ]
   logging.info( 'vcenter: getting Host List for dc: "{0}"  rp: "{1}"'.format( paramaters[ 'datacenter' ], paramaters[ 'cluster' ] ) )
   si = _connect( connection_paramaters )
@@ -170,7 +170,7 @@ def host_list( paramaters ):
       if host.summary.quickStats.overallMemoryUsage is None:  # sometimes the quickstats don't get updated, for now skip that host
         continue
 
-      total_memory = host.summary.hardware.memorySize / 1024.0 / 1024.0
+      total_memory = host.summary.hardware.memorySize / 1024.0 / 1024.0  # we want MiB
       memory_aviable = total_memory - host.summary.quickStats.overallMemoryUsage
       if memory_aviable < paramaters[ 'min_memory' ]:
         logging.debug( 'vcenter: host "{0}", low aviable ram: "{1}"'.format( host.name, memory_aviable ) )
@@ -184,7 +184,7 @@ def host_list( paramaters ):
     logging.debug( 'vcenter: host_map {0}'.format( host_map ) )
 
     result = list( host_map.keys() )
-    result.sort( key=lambda a: host_map[ a ] )
+    result.sort( key=lambda a: host_map[ a ], reverse=True )
 
     return { 'host_list': result }
 
@@ -312,7 +312,7 @@ def _createDisk( si, dc, disk, datastore, file_path ):
   spec = vim.VirtualDiskManager.FileBackedVirtualDiskSpec()
   spec.diskType = disk.get( 'type', 'thin' )  # 'thin', 'eagerZeroedThick', 'preallocate'
   spec.adapterType = disk.get( 'adapter', 'busLogic' )  # 'busLogic', 'ide', 'lsiLogic'
-  spec.capacityKb = disk.get( 'size', 10 ) * 1024 * 1024
+  spec.capacityKb = int( disk.get( 'size', 10 ) ) * 1024 * 1024  # convert to kb we got GiB
 
   logging.debug( 'vcenter: creating disk "{0}"'.format( file_path ) )
 
@@ -552,7 +552,7 @@ def _create_from_scratch( si, vm_name, data_center, resource_pool, folder, host,
 
   configSpec = vim.vm.ConfigSpec()
   configSpec.name = vm_name
-  configSpec.memoryMB = vm_paramaters[ 'memory_size' ]
+  configSpec.memoryMB = vm_paramaters[ 'memory_size' ]  # in MiB
   configSpec.numCPUs = vm_paramaters[ 'cpu_count' ]
   configSpec.guestId = vm_paramaters[ 'guest_id' ]
 
@@ -583,7 +583,7 @@ def _create_from_scratch( si, vm_name, data_center, resource_pool, folder, host,
     devSpec.device = vim.vm.device.VirtualDisk()
     devSpec.device.key = 2000 + i
     devSpec.device.controllerKey = 1000
-    devSpec.device.capacityInKB = disk[ 'size' ] * 1024 * 1024
+    devSpec.device.capacityInKB = int( disk[ 'size' ] ) * 1024 * 1024  # want KB were passed in GiB
     devSpec.device.unitNumber = i + 1
     devSpec.device.backing = vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
     devSpec.device.backing.fileName = disk_filepath_list[ i ]
@@ -723,7 +723,7 @@ def create_rollback( paramaters ):
           raise Exception( 'Unknown Task Error when Deleting "{0}": "{1}"'.format( item, task.info.error ) )
 
       if task.info.state != 'success':
-        raise Exception( 'Unexpected Task State when Deleting "{0}": "{1}"'.format( task.info.state ) )
+        raise Exception( 'Unexpected Task State when Deleting "{0}": "{1}"'.format( item, task.info.state ) )
 
     # remove all the folders if empty
 
@@ -744,7 +744,7 @@ def destroy( paramaters ):
     try:
       vm = _getVM( si, vm_uuid )
     except MOBNotFound:
-      return { 'done': True }  # it's gone, we are donne
+      return { 'done': True }  # it's gone, we are done
 
     task = vm.Destroy()
 
@@ -824,6 +824,8 @@ def set_power( paramaters ):
         vm.ShutdownGuest()  # no Task
       except vim.fault.ToolsUnavailable:
         task = vm.PowerOff()
+      except vim.fault.InvalidPowerState:
+        pass  # will try again, if it happens again, the count will get it
 
     # if it won't power off
     # vm.terminateVM()  # no Task
@@ -833,8 +835,9 @@ def set_power( paramaters ):
         logging.debug( 'vcenter: vm "{0}"({1}) power "{2}" at {3}%'.format( vm_name, vm_uuid, desired_state, task.info.progress ) )
         time.sleep( POLL_INTERVAL )
 
-      if task.info.state == vim.TaskInfo.State.error:
-        raise Exception( 'vcenter: Unable to set power state of "{0}"({1}) to "{2}"'.format( vm_name, vm_uuid, desired_state ) )
+      # invalid power status happens when we try to turn off a vm that is allready off
+      if task.info.state == vim.TaskInfo.State.error and task.info.error.__class__.__name__ != 'vim.fault.InvalidPowerState':   # will try again, if it happens again, the count will get it
+        raise Exception( 'vcenter: Unable to set power state of "{0}"({1}) to "{2}": "{3}"'.format( vm_name, vm_uuid, desired_state, task.info.error ) )
 
     else:
       time.sleep( POLL_INTERVAL * 2 )  # give the vm the chance to do something

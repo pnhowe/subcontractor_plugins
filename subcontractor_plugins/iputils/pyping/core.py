@@ -22,6 +22,7 @@ import socket
 import struct
 import sys
 import time
+import asyncio
 
 
 if sys.platform.startswith("win32"):
@@ -285,7 +286,7 @@ class Ping(object):
 
 			# Pause for the remainder of the MAX_SLEEP period (if applicable)
 			if MAX_SLEEP > delay:
-				time.sleep((MAX_SLEEP - delay) / 1000.0)
+				asyncio.sleep((MAX_SLEEP - delay) / 1000.0)
 
 		self.print_exit()
 		if self.quiet_output:

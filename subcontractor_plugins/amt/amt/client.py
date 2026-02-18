@@ -34,10 +34,8 @@ only or modeling only. And, yes this is as redundant as it looks.
 
 SCHEMA_BASE = 'http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/'
 
-CIM_AssociatedPowerManagementService = (SCHEMA_BASE +
-                                        'CIM_AssociatedPowerManagementService')
-CIM_PowerManagementService = (SCHEMA_BASE +
-                              'CIM_PowerManagementService')
+CIM_AssociatedPowerManagementService = (SCHEMA_BASE + 'CIM_AssociatedPowerManagementService')
+CIM_PowerManagementService = (SCHEMA_BASE + 'CIM_PowerManagementService')
 CIM_BootService = SCHEMA_BASE + 'CIM_BootService'
 
 CIM_ComputerSystem = SCHEMA_BASE + 'CIM_ComputerSystem'
