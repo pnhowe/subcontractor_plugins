@@ -1,3 +1,12 @@
+subcontractor-plugins (0.20.0-1) noble; urgency=medium
+
+  * Sync version with Contractor
+  * Added Proxmox
+  * Redfish should be working
+  * Libvirt fixes
+
+ -- Peter Howe <pnhowe@gmail.com>  Thu, 19 Feb 2026 07:53:54 -0700
+
 subcontractor-plugins (0.14.1-1) noble; urgency=medium
 
   * Libvirt fixes
