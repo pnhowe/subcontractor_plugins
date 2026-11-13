@@ -1,4 +1,4 @@
-subcontractor-plugins (0.20.0-1) noble; urgency=medium
+subcontractor-plugins (0.20.0-2) noble; urgency=medium
 
   * Sync version with Contractor
   * Added Proxmox
